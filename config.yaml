@@ -1,0 +1,4 @@
+macro:
+  risk_free_rate: 0.042      # 4.2% (Approximate 10-Year US Treasury yield)
+  equity_risk_premium: 0.055 # 5.5% (The extra return investors demand for buying stocks instead of safe bonds)
+  default_tax_rate: 0.21     # 21% (Standard US Corporate tax rate)

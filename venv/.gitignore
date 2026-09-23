@@ -1,0 +1,14 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Operating System files
+.DS_Store
+
+# Output reports and charts (we only want source code, not the generated files)
+*.pdf
+*.png
+
+# Caches
+.cache/

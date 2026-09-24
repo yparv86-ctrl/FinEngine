@@ -9,15 +9,25 @@ from finenginepy.ddm_model import run_ddm_valuation
 from finenginepy.guards import validate_company, ValuationError
 from finenginepy.pipeline import generate_pdf_report
 from finenginepy.sensitivity import build_sensitivity_matrix
+from finenginepy.db import init_db, log_valuation, get_valuation_history
+
+# Initialize local database
+init_db()
 
 st.set_page_config(page_title="FinEngine | Dual-Model Platform", layout="wide")
 
-st.title("📊 FinEngine: Dual-Model Valuation Platform")
+@st.cache_data(ttl=86400, show_spinner=False)
+def load_and_cache_data(ticker):
+    inc, bal, cf, info = fetch_raw_data(ticker)
+    clean_data = clean_financials(inc, bal, cf)
+    return info, clean_data
+
+st.title("📊 FinEngine: Valuation & Multi-Model Platform")
 st.markdown("Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.")
 
-# --- Sidebar: User Inputs ---
+# --- Sidebar: Controls ---
 st.sidebar.header("Model Controls")
-ticker_input = st.sidebar.text_input("Stock Ticker", value="JPM").upper().strip()
+ticker_input = st.sidebar.text_input("Stock Ticker", value="MSFT").upper().strip()
 
 st.sidebar.subheader("DCF Levers (Tech/Industrials)")
 short_term_growth = st.sidebar.slider("Stage 1: High Growth Rate", min_value=-0.10, max_value=0.40, value=0.08, step=0.01)
@@ -31,15 +41,11 @@ run_btn = st.sidebar.button("Run Intrinsic Valuation", type="primary")
 if run_btn:
     try:
         with st.spinner(f"Ingesting ledgers and validating {ticker_input}..."):
-            inc, bal, cf, info = fetch_raw_data(ticker_input)
-            clean_data = clean_financials(inc, bal, cf)
-            
-            # The router decides the fate
+            info, clean_data = load_and_cache_data(ticker_input)
             model_route = validate_company(info, clean_data)
             macro = load_macro_assumptions()
             current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
 
-            # Execute routed model
             if model_route == "DDM":
                 st.info("🏦 Financial Institution Detected: Routed to Dividend Discount Model (DDM)")
                 intrinsic_val, cost_of_capital = run_ddm_valuation(
@@ -52,11 +58,14 @@ if run_btn:
                 cost_of_capital, mkt_cap, debt = calculate_wacc(info, macro)
                 intrinsic_val = run_dcf_valuation(clean_data, info, macro, cost_of_capital, mkt_cap, debt)
 
+            # Persist to SQLite ledger
+            log_valuation(ticker_input, model_route, current_price, intrinsic_val, cost_of_capital)
+
         # --- Top KPIs ---
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Market Price", f"${current_price:.2f}")
         col2.metric("Intrinsic Value", f"${intrinsic_val:.2f}")
-        col3.metric("Discount Rate (WACC / r_e)", f"{cost_of_capital*100:.2f}%")
+        col3.metric("Discount Rate", f"{cost_of_capital*100:.2f}%")
         
         spread = ((intrinsic_val - current_price) / current_price) * 100 if current_price else 0
         verdict = "UNDERVALUED" if intrinsic_val > current_price else "OVERVALUED"
@@ -64,7 +73,7 @@ if run_btn:
 
         st.divider()
 
-        # --- Middle Row: Historical Visuals ---
+        # --- Middle Row: Historical Performance ---
         mid_col1, mid_col2 = st.columns([1, 1])
 
         with mid_col1:
@@ -72,7 +81,7 @@ if run_btn:
             plot_df = clean_data.dropna()
             dates = [str(d).split(' ')[0] for d in plot_df.index]
             
-            fig, ax = plt.subplots(figsize=(6, 4))
+            fig, ax = plt.subplots(figsize=(6, 3.5))
             x = range(len(dates))
             w = 0.35
             ax.bar([i - w/2 for i in x], plot_df['Revenue'] / 1e9, w, label="Revenue", color="#1f77b4")
@@ -82,6 +91,13 @@ if run_btn:
             ax.set_xticklabels(dates)
             ax.legend()
             st.pyplot(fig)
+
+            st.subheader("FCF Conversion Margin (%)")
+            margin_df = pd.DataFrame({
+                'Date': dates,
+                'Margin': (plot_df['Free Cash Flow'] / plot_df['Revenue']) * 100
+            }).set_index('Date')
+            st.line_chart(margin_df, color="#ff7f0e", height=200)
 
         with mid_col2:
             if model_route == "DCF":
@@ -93,15 +109,12 @@ if run_btn:
                 base_div = info.get('dividendRate') or info.get('trailingAnnualDividendRate', 0)
                 st.markdown(f"**Base Dividend:** ${base_div:.2f}")
                 st.markdown(f"**Payout Ratio:** {info.get('payoutRatio', 0)*100:.1f}%")
-                st.markdown("*Note: Sensitivity matrix is currently optimized for FCFF (DCF). DDM sensitivity expansion coming in Week 2.*")
 
         st.divider()
 
-        # --- Bottom Row: PDF Generation ---
-        st.subheader("Institutional Deliverables")
+        # --- Bottom Section: Export Tear-Sheet ---
         chart_file = f"{ticker_input}_financials.png"
         fig.savefig(chart_file, dpi=200, bbox_inches='tight')
-        
         generate_pdf_report(ticker_input, current_price, intrinsic_val, cost_of_capital, chart_file)
         
         pdf_path = f"{ticker_input}_Valuation_Report.pdf"
@@ -118,3 +131,21 @@ if run_btn:
         st.error(str(ve))
     except Exception as e:
         st.error(f"Execution Error: {e}")
+
+# --- Persistent Ledger Section ---
+st.divider()
+st.subheader("📑 Valuation Audit Ledger (Local Database)")
+history_df = get_valuation_history()
+
+if not history_df.empty:
+    st.dataframe(
+        history_df.style.format({
+            "market_price": "${:.2f}",
+            "intrinsic_value": "${:.2f}",
+            "discount_rate": "{:.2%}",
+            "spread_pct": "{:+.1f}%"
+        }),
+        use_container_width=True
+    )
+else:
+    st.caption("No valuations logged yet. Run an analysis above to record your first audit log.")

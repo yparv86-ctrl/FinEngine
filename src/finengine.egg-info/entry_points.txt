@@ -1,0 +1,2 @@
+[console_scripts]
+finengine = finenginepy.pipeline:main

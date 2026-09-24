@@ -46,10 +46,12 @@ def generate_pdf_report(ticker, current_price, intrinsic_value, wacc, chart_file
     print(f"[+] Tear-Sheet generated successfully: {pdf_file}")
 
 def run_pipeline(ticker_symbol):
-    from data_fetcher import fetch_raw_data, clean_financials
-    from dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
-    from visuals import plot_financials
-    from guards import validate_company, ValuationError
+    from finenginepy.data_fetcher import fetch_raw_data, clean_financials
+    from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
+    from finenginepy.ddm_model import run_ddm_valuation
+    from finenginepy.visuals import plot_financials
+    from finenginepy.guards import validate_company, ValuationError
+    import matplotlib.pyplot as plt
 
     ticker = ticker_symbol.upper().strip()
     print(f"\n==========================================")
@@ -60,22 +62,27 @@ def run_pipeline(ticker_symbol):
     inc, bal, cf, info = fetch_raw_data(ticker)
     clean_data = clean_financials(inc, bal, cf)
     
-    # 2. Institutional Guardrail Verification
+    # 2. Institutional Guardrail Routing
     try:
-        validate_company(info, clean_data)
+        model_route = validate_company(info, clean_data)
     except ValuationError as error:
         print(error)
         print(f"\n[x] Pipeline safely aborted for {ticker}.\n")
         return
     
-    # 3. Valuation Math
+    # 3. Valuation Math (Dynamic Execution)
     macro = load_macro_assumptions()
-    wacc, mkt_cap, debt = calculate_wacc(info, macro)
-    intrinsic_val = run_dcf_valuation(clean_data, info, macro, wacc, mkt_cap, debt)
+    
+    if model_route == "DDM":
+        intrinsic_val, wacc = run_ddm_valuation(info, macro)
+    else:
+        wacc, mkt_cap, debt = calculate_wacc(info, macro)
+        intrinsic_val = run_dcf_valuation(clean_data, info, macro, wacc, mkt_cap, debt)
+        
     current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
     
-    # 4. Chart Generation (Save without blocking popups)
-    plt.close('all')  # Prevent window blocking
+    # 4. Chart Generation
+    plt.close('all')
     plot_financials(clean_data, ticker)
     chart_file = f"{ticker}_financials.png"
     
@@ -83,12 +90,14 @@ def run_pipeline(ticker_symbol):
     generate_pdf_report(ticker, current_price, intrinsic_val, wacc, chart_file)
     print(f"\n[✓] Finished valuation run for {ticker}.\n")
 
-if __name__ == "__main__":
-    # Check if a ticker was passed in the terminal command
+def main():
+    import sys
     if len(sys.argv) > 1:
         target_ticker = sys.argv[1]
     else:
-        # Prompt the user directly if they ran the script without arguments
         target_ticker = input("Enter Stock Ticker (e.g. MSFT, GOOG, NVDA): ")
         
     run_pipeline(target_ticker)
+
+if __name__ == "__main__":
+    main()

@@ -9,12 +9,12 @@ from finenginepy.ddm_model import run_ddm_valuation
 from finenginepy.guards import validate_company, ValuationError
 from finenginepy.pipeline import generate_pdf_report
 from finenginepy.sensitivity import build_sensitivity_matrix
-from finenginepy.db import init_db, log_valuation, get_valuation_history
+from finenginepy.db import init_db, log_valuation, get_valuation_history, clear_valuation_history
 
 # Initialize local database
 init_db()
 
-st.set_page_config(page_title="FinEngine | Dual-Model Platform", layout="wide")
+st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide")
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_and_cache_data(ticker):
@@ -22,12 +22,12 @@ def load_and_cache_data(ticker):
     clean_data = clean_financials(inc, bal, cf)
     return info, clean_data
 
-st.title("📊 FinEngine: Valuation & Multi-Model Platform")
+st.title("📊 FinEngine: Enterprise Valuation Platform")
 st.markdown("Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.")
 
 # --- Sidebar: Controls ---
 st.sidebar.header("Model Controls")
-ticker_input = st.sidebar.text_input("Stock Ticker", value="MSFT").upper().strip()
+ticker_input = st.sidebar.text_input("Stock Ticker", value="AAPL").upper().strip()
 
 st.sidebar.subheader("DCF Levers (Tech/Industrials)")
 short_term_growth = st.sidebar.slider("Stage 1: High Growth Rate", min_value=-0.10, max_value=0.40, value=0.08, step=0.01)
@@ -37,6 +37,26 @@ st.sidebar.subheader("DDM Levers (Banks)")
 div_growth_rate = st.sidebar.slider("Dividend Growth Rate", min_value=0.01, max_value=0.15, value=0.06, step=0.01)
 
 run_btn = st.sidebar.button("Run Intrinsic Valuation", type="primary")
+
+# --- Sidebar: Audit Database Controls ---
+st.sidebar.divider()
+st.sidebar.subheader("Ledger Admin Controls")
+
+history_df = get_valuation_history()
+if not history_df.empty:
+    csv_bytes = history_df.to_csv(index=False).encode('utf-8')
+    st.sidebar.download_button(
+        label="📥 Export Ledger (CSV)",
+        data=csv_bytes,
+        file_name="finengine_valuation_audit_ledger.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+    if st.sidebar.button("🗑️ Reset Audit Ledger", use_container_width=True):
+        clear_valuation_history()
+        st.rerun()
+else:
+    st.sidebar.caption("Audit ledger is empty.")
 
 if run_btn:
     try:
@@ -73,15 +93,15 @@ if run_btn:
 
         st.divider()
 
-        # --- Middle Row: Historical Performance ---
+        # --- Middle Row: Visuals & Sensitivity ---
         mid_col1, mid_col2 = st.columns([1, 1])
 
         with mid_col1:
             st.subheader("Historical Cash Performance")
-            plot_df = clean_data.dropna()
+            plot_df = clean_data.dropna(subset=['Revenue', 'Free Cash Flow'])
             dates = [str(d).split(' ')[0] for d in plot_df.index]
             
-            fig, ax = plt.subplots(figsize=(6, 3.5))
+            fig, ax = plt.subplots(figsize=(6, 3.2))
             x = range(len(dates))
             w = 0.35
             ax.bar([i - w/2 for i in x], plot_df['Revenue'] / 1e9, w, label="Revenue", color="#1f77b4")
@@ -92,12 +112,33 @@ if run_btn:
             ax.legend()
             st.pyplot(fig)
 
-            st.subheader("FCF Conversion Margin (%)")
-            margin_df = pd.DataFrame({
-                'Date': dates,
-                'Margin': (plot_df['Free Cash Flow'] / plot_df['Revenue']) * 100
-            }).set_index('Date')
-            st.line_chart(margin_df, color="#ff7f0e", height=200)
+            # --- Multi-Ratio Health Trends ---
+            st.subheader("Operating Efficiency & Capital Ratios")
+            ratio_tab1, ratio_tab2, ratio_tab3 = st.tabs(["FCF Margin", "Net Margin", "ROIC"])
+            
+            with ratio_tab1:
+                fcf_margin = pd.DataFrame({
+                    'Date': dates,
+                    'FCF Margin (%)': (plot_df['Free Cash Flow'] / plot_df['Revenue']) * 100
+                }).set_index('Date')
+                st.line_chart(fcf_margin, color="#ff7f0e", height=190)
+
+            with ratio_tab2:
+                net_margin = pd.DataFrame({
+                    'Date': dates,
+                    'Net Profit Margin (%)': (plot_df['Net Income'] / plot_df['Revenue']) * 100
+                }).set_index('Date')
+                st.line_chart(net_margin, color="#2ca02c", height=190)
+
+            with ratio_tab3:
+                if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].notnull().all():
+                    tax_rate = macro.get("default_tax_rate", 0.21)
+                    nopat = plot_df['Operating Income'] * (1 - tax_rate)
+                    roic_series = (nopat / plot_df['Invested Capital']) * 100
+                    roic_df = pd.DataFrame({'Date': dates, 'ROIC (%)': roic_series}).set_index('Date')
+                    st.line_chart(roic_df, color="#1f77b4", height=190)
+                else:
+                    st.caption("Invested capital structure not applicable or missing for this ticker.")
 
         with mid_col2:
             if model_route == "DCF":
@@ -113,6 +154,7 @@ if run_btn:
         st.divider()
 
         # --- Bottom Section: Export Tear-Sheet ---
+        st.subheader("Institutional Deliverables")
         chart_file = f"{ticker_input}_financials.png"
         fig.savefig(chart_file, dpi=200, bbox_inches='tight')
         generate_pdf_report(ticker_input, current_price, intrinsic_val, cost_of_capital, chart_file)
@@ -135,11 +177,11 @@ if run_btn:
 # --- Persistent Ledger Section ---
 st.divider()
 st.subheader("📑 Valuation Audit Ledger (Local Database)")
-history_df = get_valuation_history()
+updated_history_df = get_valuation_history()
 
-if not history_df.empty:
+if not updated_history_df.empty:
     st.dataframe(
-        history_df.style.format({
+        updated_history_df.style.format({
             "market_price": "${:.2f}",
             "intrinsic_value": "${:.2f}",
             "discount_rate": "{:.2%}",

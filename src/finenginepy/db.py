@@ -43,3 +43,9 @@ def get_valuation_history():
     df = pd.read_sql_query("SELECT timestamp, ticker, model_type, market_price, intrinsic_value, discount_rate, spread_pct, verdict FROM valuation_runs ORDER BY id DESC", conn)
     conn.close()
     return df
+def clear_valuation_history():
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM valuation_runs")
+    conn.commit()
+    conn.close()

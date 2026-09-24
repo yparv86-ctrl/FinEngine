@@ -3,43 +3,71 @@ import pandas as pd
 
 def fetch_raw_data(ticker_symbol):
     print(f"Opening the ledgers for {ticker_symbol}...")
-    ticker = yf.Ticker(ticker_symbol)
+    stock = yf.Ticker(ticker_symbol)
     
-    # Flip columns to read oldest -> newest (left to right)
-    income_stmt = ticker.financials.iloc[:, ::-1]
-    balance_sheet = ticker.balance_sheet.iloc[:, ::-1]
-    cash_flow = ticker.cashflow.iloc[:, ::-1]
+    inc = stock.financials
+    bal = stock.balance_sheet
+    cf = stock.cashflow
+    info = stock.info
     
-    return income_stmt, balance_sheet, cash_flow, ticker.info
+    return inc, bal, cf, info
 
-def clean_financials(income, balance, cashflow):
+def clean_financials(inc, bal, cf):
     print("Extracting core DCF ingredients via Alias Mapping...")
-    clean_df = pd.DataFrame()
     
-    # The Rosetta Stone: Map our target metrics to all known yfinance API variations
-    aliases = {
-        'Revenue': ['Total Revenue', 'Operating Revenue', 'Revenue'],
-        'Operating CF': ['Operating Cash Flow', 'Total Cash From Operating Activities', 'Net Cash From Operating Activities'],
-        'CapEx': ['Capital Expenditure', 'Capital Expenditures', 'Property Plant And Equipment', 'Purchases Of Property Plant And Equipment']
+    # 1. Alias Dictionaries for Diverse SEC Filings
+    rev_aliases = ["Total Revenue", "Operating Revenue", "Revenue"]
+    fcf_aliases = ["Free Cash Flow"]
+    cf_ops_aliases = ["Operating Cash Flow", "Cash Flow From Continuing Operating Activities", "Total Cash From Operating Activities"]
+    capex_aliases = ["Capital Expenditure", "Capital Expenditures", "Payments For Property Plant And Equipment"]
+    net_inc_aliases = ["Net Income", "Net Income Common Stockholders", "Net Income From Continuing Operation Net Minority Interest"]
+    ebit_aliases = ["Operating Income", "EBIT", "Total Operating Profit/Loss"]
+    equity_aliases = ["Stockholders Equity", "Total Stockholder Equity", "Common Stock Equity"]
+    debt_aliases = ["Total Debt", "Long Term Debt And Capital Lease Obligation"]
+    cash_aliases = ["Cash Cash Equivalents And Short Term Investments", "Cash And Cash Equivalents", "Cash Financial"]
+
+    def extract_row(df, aliases):
+        if df is None or df.empty:
+            return None
+        for alias in aliases:
+            if alias in df.index:
+                return df.loc[alias]
+        return None
+
+    revenue = extract_row(inc, rev_aliases)
+    net_income = extract_row(inc, net_inc_aliases)
+    ebit = extract_row(inc, ebit_aliases)
+    fcf = extract_row(cf, fcf_aliases)
+    cf_ops = extract_row(cf, cf_ops_aliases)
+    capex = extract_row(cf, capex_aliases)
+    
+    equity = extract_row(bal, equity_aliases)
+    debt = extract_row(bal, debt_aliases)
+    cash = extract_row(bal, cash_aliases)
+
+    # Fallback for Free Cash Flow if missing (CapEx is typically reported as negative in cash flow statements)
+    if fcf is None and cf_ops is not None and capex is not None:
+        fcf = cf_ops - capex.abs()
+
+    # Impute missing line items with 0 if absent
+    dates = inc.columns if inc is not None and not inc.empty else cf.columns
+    
+    clean_dict = {
+        "Revenue": revenue if revenue is not None else pd.Series(0, index=dates),
+        "Net Income": net_income if net_income is not None else pd.Series(0, index=dates),
+        "Operating Income": ebit if ebit is not None else pd.Series(0, index=dates),
+        "Free Cash Flow": fcf if fcf is not None else pd.Series(0, index=dates)
     }
     
-    # Helper function to scan the ledger for any matching alias
-    def extract_row(df, possible_names):
-        for name in possible_names:
-            if name in df.index:
-                return df.loc[name]
-        return None # Return None only if absolutely no variations match
-        
-    clean_df['Revenue'] = extract_row(income, aliases['Revenue'])
-    clean_df['Operating CF'] = extract_row(cashflow, aliases['Operating CF'])
-    
-    capex_row = extract_row(cashflow, aliases['CapEx'])
-    if capex_row is not None:
-        clean_df['CapEx'] = capex_row.abs()
+    clean_df = pd.DataFrame(clean_dict).sort_index()
+
+    # Calculate Invested Capital (Total Debt + Total Equity - Cash)
+    if equity is not None and debt is not None:
+        bal_dates = bal.columns
+        cash_series = cash if cash is not None else pd.Series(0, index=bal_dates)
+        invested_cap = (debt + equity - cash_series).sort_index()
+        clean_df["Invested Capital"] = invested_cap.reindex(clean_df.index).bfill().ffill()
     else:
-        # GIGO Fallback: We fill with 0 so the math engine doesn't crash, but warn the user loudly
-        print("\n[-] WARNING: CapEx line item completely missing from API. Imputing as 0.")
-        clean_df['CapEx'] = 0
-        
-    clean_df['Free Cash Flow'] = clean_df['Operating CF'] - clean_df['CapEx']
+        clean_df["Invested Capital"] = None
+
     return clean_df

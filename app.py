@@ -1,3 +1,11 @@
+import sys
+sys.path.append("src")
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import os
+# ... (keep the rest of your imports and code exactly the same)
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt

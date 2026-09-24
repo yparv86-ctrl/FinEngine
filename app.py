@@ -8,7 +8,7 @@ from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dc
 from finenginepy.ddm_model import run_ddm_valuation
 from finenginepy.guards import validate_company, ValuationError
 from finenginepy.pipeline import generate_pdf_report
-from finenginepy.sensitivity import build_sensitivity_matrix
+from finenginepy.sensitivity import build_sensitivity_matrix, build_ddm_sensitivity_matrix
 from finenginepy.db import init_db, log_valuation, get_valuation_history, clear_valuation_history
 
 # Initialize local database
@@ -143,13 +143,33 @@ if run_btn:
         with mid_col2:
             if model_route == "DCF":
                 st.subheader("Valuation Multiverse (Sensitivity)")
-                matrix_df = build_sensitivity_matrix(clean_data, info, cost_of_capital, base_g=perpetual_growth, short_term_growth=short_term_growth)
+                matrix_df = build_sensitivity_matrix(
+                    clean_data, info, cost_of_capital, 
+                    base_g=perpetual_growth, 
+                    short_term_growth=short_term_growth
+                )
                 st.dataframe(matrix_df.style.highlight_max(axis=None, color='#2ca02c33'), use_container_width=True)
             else:
                 st.subheader("Dividend Policy Analysis")
                 base_div = info.get('dividendRate') or info.get('trailingAnnualDividendRate', 0)
-                st.markdown(f"**Base Dividend:** ${base_div:.2f}")
-                st.markdown(f"**Payout Ratio:** {info.get('payoutRatio', 0)*100:.1f}%")
+                c_div1, c_div2 = st.columns(2)
+                c_div1.metric("Base Dividend (DPS)", f"${base_div:.2f}")
+                c_div2.metric("Payout Ratio", f"{info.get('payoutRatio', 0)*100:.1f}%")
+                
+                st.subheader("DDM Valuation Multiverse")
+                ddm_matrix = build_ddm_sensitivity_matrix(
+                    info, 
+                    cost_of_capital, 
+                    div_growth_rate=div_growth_rate, 
+                    base_terminal_g=perpetual_growth
+                )
+                if not ddm_matrix.empty:
+                    st.dataframe(
+                        ddm_matrix.style.highlight_max(axis=None, color='#2ca02c33').format("${:.2f}", na_rep="N/A"), 
+                        use_container_width=True
+                    )
+                else:
+                    st.caption("Unable to compute sensitivity matrix: Missing or non-positive dividend baseline.")
 
         st.divider()
 

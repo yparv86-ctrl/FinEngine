@@ -5,11 +5,6 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
-# ... (keep the rest of your imports and code exactly the same)
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import os
 
 from finenginepy.data_fetcher import fetch_raw_data, clean_financials
 from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
@@ -19,43 +14,73 @@ from finenginepy.pipeline import generate_pdf_report
 from finenginepy.sensitivity import build_sensitivity_matrix, build_ddm_sensitivity_matrix
 from finenginepy.db import init_db, log_valuation, get_valuation_history, clear_valuation_history
 
+# MUST BE THE FIRST STREAMLIT COMMAND
+st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide")
+
 # Initialize local database
 init_db()
 
-st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide")
-# --- UI Overhaul: Custom CSS Injection ---
+# --- Core Data Caching Pipeline ---
+# --- Core Data Caching Pipeline ---
+@st.cache_data(ttl=3600)
+def load_and_cache_data(ticker):
+    # Unpack all 4 variables expected by the fetcher
+    inc, bal, cf, info = fetch_raw_data(ticker)
+    # Pass the 3 financial statements to the cleaner
+    clean_data = clean_financials(inc, bal, cf)
+    return info, clean_data
+
+# --- UI Overhaul: Custom CSS Injection & Typography ---
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    
+    /* Apply premium font globally */
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif !important;
+    }
+
     /* Hide Streamlit default branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Style metric containers for a futuristic card look */
+    /* Style metric containers */
     [data-testid="stMetric"] {
         background-color: #171821;
-        border-left: 3px solid #00FFCC; /* Neon cyan accent */
+        border-left: 3px solid #00FFCC;
         padding: 15px 20px;
         border-radius: 8px;
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
     }
     
-    /* Smooth out the data table styling */
-    [data-testid="stDataFrame"] {
-        border-radius: 8px;
-        overflow: hidden;
+    /* Fix Button Contrast and Add Neon Hover Effect */
+    button[kind="primary"] {
+        background-color: #00FFCC !important;
+        color: #0b0f19 !important; /* Force dark text for readability */
+        font-weight: 700 !important;
+        letter-spacing: 0.5px !important;
+        border: none !important;
+        border-radius: 6px !important;
+        transition: all 0.3s ease-in-out !important;
+        box-shadow: 0 0 8px rgba(0, 255, 204, 0.2) !important;
+    }
+    button[kind="primary"]:hover {
+        box-shadow: 0 0 18px rgba(0, 255, 204, 0.6) !important;
+        transform: translateY(-2px) !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data(ttl=86400, show_spinner=False)
-def load_and_cache_data(ticker):
-    inc, bal, cf, info = fetch_raw_data(ticker)
-    clean_data = clean_financials(inc, bal, cf)
-    return info, clean_data
-
-st.title("📊 FinEngine: Enterprise Valuation Platform")
-st.markdown("Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.")
+# Sleek Custom Header (No Emojis)
+st.markdown("""
+    <h1 style='font-family: "Inter", sans-serif; font-weight: 700; letter-spacing: -1.2px; margin-bottom: 0px;'>
+        FinEngine <span style='color: #00FFCC; font-weight: 400;'>| Enterprise Valuation</span>
+    </h1>
+    <p style='color: #8b92a5; font-size: 1.05rem; margin-top: 5px; margin-bottom: 25px;'>
+        Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.
+    </p>
+""", unsafe_allow_html=True)
 
 # --- Sidebar: Controls ---
 st.sidebar.header("Model Controls")
@@ -78,13 +103,13 @@ history_df = get_valuation_history()
 if not history_df.empty:
     csv_bytes = history_df.to_csv(index=False).encode('utf-8')
     st.sidebar.download_button(
-        label="📥 Export Ledger (CSV)",
+        label="Export Ledger (CSV)",
         data=csv_bytes,
         file_name="finengine_valuation_audit_ledger.csv",
         mime="text/csv",
         use_container_width=True
     )
-    if st.sidebar.button("🗑️ Reset Audit Ledger", use_container_width=True):
+    if st.sidebar.button("Reset Audit Ledger", use_container_width=True):
         clear_valuation_history()
         st.rerun()
 else:
@@ -99,14 +124,14 @@ if run_btn:
             current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
 
             if model_route == "DDM":
-                st.info("🏦 Financial Institution Detected: Routed to Dividend Discount Model (DDM)")
+                st.info("Financial Institution Detected: Routed to Dividend Discount Model (DDM)")
                 intrinsic_val, cost_of_capital = run_ddm_valuation(
                     info, macro, forecast_years=5, 
                     dividend_growth_rate=div_growth_rate, 
                     terminal_growth_rate=perpetual_growth
                 )
             else:
-                st.info("🏭 Standard Corporate Detected: Routed to 3-Stage DCF Model")
+                st.info("Standard Corporate Detected: Routed to 3-Stage DCF Model")
                 cost_of_capital, mkt_cap, debt = calculate_wacc(info, macro)
                 intrinsic_val = run_dcf_valuation(clean_data, info, macro, cost_of_capital, mkt_cap, debt)
 
@@ -163,7 +188,8 @@ if run_btn:
                 st.line_chart(net_margin, color="#2ca02c", height=190)
 
             with ratio_tab3:
-                if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].notnull().all():
+                # Use .isna().sum() == 0 to cleanly resolve Pylance type warnings
+                if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].isna().sum() == 0:
                     tax_rate = macro.get("default_tax_rate", 0.21)
                     nopat = plot_df['Operating Income'] * (1 - tax_rate)
                     roic_series = (nopat / plot_df['Invested Capital']) * 100
@@ -171,7 +197,6 @@ if run_btn:
                     st.line_chart(roic_df, color="#1f77b4", height=190)
                 else:
                     st.caption("Invested capital structure not applicable or missing for this ticker.")
-
         with mid_col2:
             if model_route == "DCF":
                 st.subheader("Valuation Multiverse (Sensitivity)")
@@ -215,7 +240,7 @@ if run_btn:
         if os.path.exists(pdf_path):
             with open(pdf_path, "rb") as pdf_data:
                 st.download_button(
-                    label=f"📥 Download {ticker_input} Executive PDF Tear-Sheet",
+                    label=f"Download {ticker_input} Executive PDF Tear-Sheet",
                     data=pdf_data,
                     file_name=pdf_path,
                     mime="application/pdf"
@@ -228,7 +253,7 @@ if run_btn:
 
 # --- Persistent Ledger Section ---
 st.divider()
-st.subheader("📑 Valuation Audit Ledger (Local Database)")
+st.subheader("Valuation Audit Ledger (Local Database)")
 updated_history_df = get_valuation_history()
 
 if not updated_history_df.empty:

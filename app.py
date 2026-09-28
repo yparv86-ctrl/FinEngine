@@ -23,6 +23,30 @@ from finenginepy.db import init_db, log_valuation, get_valuation_history, clear_
 init_db()
 
 st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide")
+# --- UI Overhaul: Custom CSS Injection ---
+st.markdown("""
+    <style>
+    /* Hide Streamlit default branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Style metric containers for a futuristic card look */
+    [data-testid="stMetric"] {
+        background-color: #171821;
+        border-left: 3px solid #00FFCC; /* Neon cyan accent */
+        padding: 15px 20px;
+        border-radius: 8px;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    }
+    
+    /* Smooth out the data table styling */
+    [data-testid="stDataFrame"] {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def load_and_cache_data(ticker):

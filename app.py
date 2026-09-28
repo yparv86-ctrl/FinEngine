@@ -96,24 +96,7 @@ div_growth_rate = st.sidebar.slider("Dividend Growth Rate", min_value=0.01, max_
 run_btn = st.sidebar.button("Run Intrinsic Valuation", type="primary")
 
 # --- Sidebar: Audit Database Controls ---
-st.sidebar.divider()
-st.sidebar.subheader("Ledger Admin Controls")
 
-history_df = get_valuation_history()
-if not history_df.empty:
-    csv_bytes = history_df.to_csv(index=False).encode('utf-8')
-    st.sidebar.download_button(
-        label="Export Ledger (CSV)",
-        data=csv_bytes,
-        file_name="finengine_valuation_audit_ledger.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
-    if st.sidebar.button("Reset Audit Ledger", use_container_width=True):
-        clear_valuation_history()
-        st.rerun()
-else:
-    st.sidebar.caption("Audit ledger is empty.")
 
 if run_btn:
     try:
@@ -251,20 +234,3 @@ if run_btn:
     except Exception as e:
         st.error(f"Execution Error: {e}")
 
-# --- Persistent Ledger Section ---
-st.divider()
-st.subheader("Valuation Audit Ledger (Local Database)")
-updated_history_df = get_valuation_history()
-
-if not updated_history_df.empty:
-    st.dataframe(
-        updated_history_df.style.format({
-            "market_price": "${:.2f}",
-            "intrinsic_value": "${:.2f}",
-            "discount_rate": "{:.2%}",
-            "spread_pct": "{:+.1f}%"
-        }),
-        use_container_width=True
-    )
-else:
-    st.caption("No valuations logged yet. Run an analysis above to record your first audit log.")

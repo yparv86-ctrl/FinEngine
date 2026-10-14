@@ -5,6 +5,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import os
+import plotly.graph_objects as go
 
 from finenginepy.data_fetcher import fetch_raw_data, clean_financials
 from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
@@ -38,7 +39,6 @@ st.markdown("""
 
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    header {visibility: hidden;}
     
     [data-testid="stMetric"] {
         background-color: #171821;
@@ -131,6 +131,7 @@ if run_btn:
             plot_df = clean_data.dropna(subset=['Revenue', 'Free Cash Flow'])
             dates = [str(d).split(' ')[0] for d in plot_df.index]
             
+            # --- Background Matplotlib Chart (For PDF Export Only) ---
             fig, ax = plt.subplots(figsize=(6, 3.2))
             x = range(len(dates))
             w = 0.35
@@ -140,7 +141,24 @@ if run_btn:
             ax.set_xticks(x)
             ax.set_xticklabels(dates)
             ax.legend()
-            st.pyplot(fig)
+            # We purposely do NOT call st.pyplot(fig) here anymore.
+
+            # --- Interactive Plotly Chart (For Web UI) ---
+            fig_plotly = go.Figure()
+            fig_plotly.add_trace(go.Bar(x=dates, y=plot_df['Revenue'] / 1e9, name='Revenue', marker_color='#1f77b4'))
+            # Using your neon cyan accent for Free Cash Flow
+            fig_plotly.add_trace(go.Bar(x=dates, y=plot_df['Free Cash Flow'] / 1e9, name='Free Cash Flow', marker_color='#00FFCC'))
+            
+            fig_plotly.update_layout(
+                barmode='group',
+                paper_bgcolor='rgba(0,0,0,0)', # Transparent background
+                plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='#8b92a5', family='Inter'),
+                margin=dict(l=0, r=0, t=10, b=0),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                yaxis_title="Billions (USD)"
+            )
+            st.plotly_chart(fig_plotly, use_container_width=True)
 
             # --- Multi-Ratio Health Trends ---
             st.subheader("Operating Efficiency & Capital Ratios")

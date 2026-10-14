@@ -6,3 +6,4 @@ yfinance
 reportlab
 PyYAML
 plotly
+supabase

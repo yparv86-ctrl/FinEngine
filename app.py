@@ -1,25 +1,31 @@
+import os
 import sys
+
 sys.path.append("src")
 
-import streamlit as st
-import pandas as pd
 import matplotlib.pyplot as plt
-import os
+import pandas as pd
 import plotly.graph_objects as go
+import streamlit as st
 
-from finenginepy.data_fetcher import fetch_raw_data, clean_financials
-from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
-from finenginepy.ddm_model import run_ddm_valuation
-from finenginepy.guards import validate_company, ValuationError
-from finenginepy.pipeline import generate_pdf_report
-from finenginepy.sensitivity import build_sensitivity_matrix, build_ddm_sensitivity_matrix
+from finenginepy.data_fetcher import clean_financials, fetch_raw_data
 from finenginepy.db import init_db, log_valuation, require_auth
+from finenginepy.dcf_model import calculate_wacc, load_macro_assumptions, run_dcf_valuation
+from finenginepy.ddm_model import run_ddm_valuation
+from finenginepy.guards import ValuationError, validate_company
+from finenginepy.pipeline import generate_pdf_report
+from finenginepy.sensitivity import build_ddm_sensitivity_matrix, build_sensitivity_matrix
 
 # MUST BE THE FIRST STREAMLIT COMMAND
-st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(
+    page_title="FinEngine | Valuation Platform",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# Initialize local database
+# Initialize database hook
 init_db()
+
 
 # --- Core Data Caching Pipeline ---
 @st.cache_data(ttl=3600)
@@ -28,52 +34,132 @@ def load_and_cache_data(ticker):
     clean_data = clean_financials(inc, bal, cf)
     return info, clean_data
 
-# --- UI Overhaul: Custom CSS Injection & Typography ---
+
+# --- Phase 3: Private Wealth Gold Glassmorphism & Typography ---
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-    
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
+
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif !important;
     }
 
+    /* Warm Carbon Background with Ambient Champagne Glow */
+    .stApp {
+        background: radial-gradient(circle at 15% 10%, rgba(245, 158, 11, 0.06), transparent 38%),
+                    radial-gradient(circle at 85% 20%, rgba(156, 163, 175, 0.04), transparent 42%),
+                    #0C0C0E !important;
+    }
+
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-    
-    [data-testid="stMetric"] {
-        background-color: #171821;
-        border-left: 3px solid #00FFCC;
-        padding: 15px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+
+    /* Frosted Graphite Sidebar */
+    [data-testid="stSidebar"] {
+        background: rgba(22, 22, 26, 0.85) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border-right: 1px solid rgba(255, 255, 255, 0.06) !important;
     }
-    
-    button[kind="primary"] {
-        background-color: #00FFCC !important;
-        color: #0b0f19 !important;
+
+    /* Graphite Glass Metric Cards with Champagne Amber Top Border */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, rgba(22, 22, 26, 0.92) 0%, rgba(22, 22, 26, 0.65) 100%) !important;
+        backdrop-filter: blur(14px) !important;
+        -webkit-backdrop-filter: blur(14px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.07) !important;
+        border-top: 1px solid rgba(245, 158, 11, 0.45) !important;
+        padding: 18px 22px !important;
+        border-radius: 12px !important;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55) !important;
+        transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.25s ease, box-shadow 0.25s ease !important;
+    }
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-4px) !important;
+        border-color: rgba(245, 158, 11, 0.65) !important;
+        box-shadow: 0 12px 34px rgba(245, 158, 11, 0.12) !important;
+    }
+
+    /* Soft Silver Labels & Monospace Financial Numbers */
+    [data-testid="stMetricLabel"], label {
+        color: #9CA3AF !important;
+        font-size: 0.80rem !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.9px !important;
+        font-weight: 600 !important;
+    }
+    [data-testid="stMetricValue"] {
+        font-family: 'JetBrains Mono', monospace !important;
+        font-variant-numeric: tabular-nums !important;
+        color: #F9FAFB !important;
         font-weight: 700 !important;
-        letter-spacing: 0.5px !important;
+        letter-spacing: -0.5px !important;
+    }
+    [data-testid="stMetricDelta"], [data-testid="stDataFrame"] {
+        font-family: 'JetBrains Mono', monospace !important;
+        font-variant-numeric: tabular-nums !important;
+    }
+
+    /* Graphite Bento-Grid Containers, Tables & Alerts */
+    [data-testid="stDataFrame"], [data-testid="stAlert"], [data-testid="stVerticalBlockBorderWrapper"] {
+        background: rgba(22, 22, 26, 0.72) !important;
+        backdrop-filter: blur(12px) !important;
+        border: 1px solid rgba(255, 255, 255, 0.07) !important;
+        border-radius: 12px !important;
+    }
+
+    /* Champagne Amber Primary Action Button */
+    button[kind="primary"] {
+        background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+        color: #0C0C0E !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.4px !important;
         border: none !important;
-        border-radius: 6px !important;
-        transition: all 0.3s ease-in-out !important;
-        box-shadow: 0 0 8px rgba(0, 255, 204, 0.2) !important;
+        border-radius: 8px !important;
+        transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1) !important;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.22) !important;
     }
     button[kind="primary"]:hover {
-        box-shadow: 0 0 18px rgba(0, 255, 204, 0.6) !important;
-        transform: translateY(-2px) !important;
+        box-shadow: 0 6px 22px rgba(245, 158, 11, 0.45) !important;
+        transform: translateY(-2px) scale(1.01) !important;
+    }
+
+    /* Institutional Champagne Status Pill */
+    .model-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        background: rgba(245, 158, 11, 0.10);
+        border: 1px solid rgba(245, 158, 11, 0.30);
+        color: #F59E0B;
+        padding: 6px 14px;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 600;
+        letter-spacing: 0.8px;
+        text-transform: uppercase;
+        margin-bottom: 18px;
+    }
+    .status-dot {
+        width: 7px;
+        height: 7px;
+        background-color: #F59E0B;
+        border-radius: 50%;
+        box-shadow: 0 0 8px #F59E0B;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # Sleek Custom Header
 st.markdown("""
-    <h1 style='font-family: "Inter", sans-serif; font-weight: 700; letter-spacing: -1.2px; margin-bottom: 0px;'>
-        FinEngine <span style='color: #00FFCC; font-weight: 400;'>| Enterprise Valuation</span>
+    <h1 style="margin-bottom: 0px; font-weight: 700; letter-spacing: -0.5px;">
+        FinEngine <span style="color: #F59E0B; font-weight: 400;">| Enterprise Valuation</span>
     </h1>
-    <p style='color: #8b92a5; font-size: 1.05rem; margin-top: 5px; margin-bottom: 25px;'>
+    <p style="color: #9CA3AF; font-size: 1.0rem; margin-top: 4px; margin-bottom: 24px;">
         Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.
     </p>
 """, unsafe_allow_html=True)
+
 require_auth()
 
 # --- Sidebar: Controls ---
@@ -97,27 +183,42 @@ if run_btn:
             macro = load_macro_assumptions()
             current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
 
+            # Render Live Company Identity Header & Champagne Amber Routing Pill
+            company_name = info.get("longName", ticker_input)
+            sector = info.get("sector", "Equity Asset")
+            exchange = info.get("exchange", "MKT")
+
             if model_route == "DDM":
-                st.info("🏦 Financial Institution Detected: Routed to Dividend Discount Model (DDM)")
+                badge_text = "Financial Institution • Dividend Discount Engine (DDM)"
                 intrinsic_val, cost_of_capital = run_ddm_valuation(
-                    info, macro, forecast_years=5, 
-                    dividend_growth_rate=div_growth_rate, 
+                    info,
+                    macro,
+                    forecast_years=5,
+                    dividend_growth_rate=div_growth_rate,
                     terminal_growth_rate=perpetual_growth
                 )
             else:
-                st.info("🏭 Standard Corporate Detected: Routed to 3-Stage DCF Model")
+                badge_text = "Standard Corporate • 3-Stage DCF Engine"
                 cost_of_capital, mkt_cap, debt = calculate_wacc(info, macro)
                 intrinsic_val = run_dcf_valuation(clean_data, info, macro, cost_of_capital, mkt_cap, debt)
 
-            # Persist to SQLite ledger
+            st.markdown(f"""
+                <div style="margin-bottom: 8px;">
+                    <span style="font-size: 1.45rem; font-weight: 700; color: #F9FAFB;">{company_name}</span>
+                    <span style="color: #9CA3AF; font-size: 0.92rem; margin-left: 10px;">{sector} &bull; {exchange}: {ticker_input}</span>
+                </div>
+                <div class="model-pill"><span class="status-dot"></span>Active Route: {badge_text}</div>
+            """, unsafe_allow_html=True)
+
+            # Persist to Supabase cloud ledger
             log_valuation(ticker_input, model_route, current_price, intrinsic_val, cost_of_capital)
 
         # --- Top KPIs ---
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Market Price", f"${current_price:.2f}")
         col2.metric("Intrinsic Value", f"${intrinsic_val:.2f}")
-        col3.metric("Discount Rate", f"{cost_of_capital*100:.2f}%")
-        
+        col3.metric("Discount Rate", f"{cost_of_capital * 100:.2f}%")
+
         spread = ((intrinsic_val - current_price) / current_price) * 100 if current_price else 0
         verdict = "UNDERVALUED" if intrinsic_val > current_price else "OVERVALUED"
         col4.metric("Spread / Verdict", f"{spread:.1f}%", delta=verdict)
@@ -128,97 +229,115 @@ if run_btn:
         mid_col1, mid_col2 = st.columns([1, 1])
 
         with mid_col1:
-            st.subheader("Historical Cash Performance")
-            plot_df = clean_data.dropna(subset=['Revenue', 'Free Cash Flow'])
-            dates = [str(d).split(' ')[0] for d in plot_df.index]
-            
-            # --- Background Matplotlib Chart (For PDF Export Only) ---
-            fig, ax = plt.subplots(figsize=(6, 3.2))
-            x = range(len(dates))
-            w = 0.35
-            ax.bar([i - w/2 for i in x], plot_df['Revenue'] / 1e9, w, label="Revenue", color="#1f77b4")
-            ax.bar([i + w/2 for i in x], plot_df['Free Cash Flow'] / 1e9, w, label="Free Cash Flow", color="#2ca02c")
-            ax.set_ylabel("Billions (USD)")
-            ax.set_xticks(x)
-            ax.set_xticklabels(dates)
-            ax.legend()
-            # We purposely do NOT call st.pyplot(fig) here anymore.
+            with st.container(border=True):
+                st.subheader("Historical Cash Performance")
+                plot_df = clean_data.dropna(subset=['Revenue', 'Free Cash Flow'])
+                dates = [str(d).split(' ')[0] for d in plot_df.index]
 
-            # --- Interactive Plotly Chart (For Web UI) ---
-            fig_plotly = go.Figure()
-            fig_plotly.add_trace(go.Bar(x=dates, y=plot_df['Revenue'] / 1e9, name='Revenue', marker_color='#1f77b4'))
-            # Using your neon cyan accent for Free Cash Flow
-            fig_plotly.add_trace(go.Bar(x=dates, y=plot_df['Free Cash Flow'] / 1e9, name='Free Cash Flow', marker_color='#00FFCC'))
-            
-            fig_plotly.update_layout(
-                barmode='group',
-                paper_bgcolor='rgba(0,0,0,0)', # Transparent background
-                plot_bgcolor='rgba(0,0,0,0)',
-                font=dict(color='#8b92a5', family='Inter'),
-                margin=dict(l=0, r=0, t=10, b=0),
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                yaxis_title="Billions (USD)"
-            )
-            st.plotly_chart(fig_plotly, use_container_width=True)
+                # --- Background Matplotlib Chart (For PDF Export Only) ---
+                fig, ax = plt.subplots(figsize=(6, 3.2))
+                x = range(len(dates))
+                w = 0.35
+                ax.bar([i - w / 2 for i in x], plot_df['Revenue'] / 1e9, w, label="Revenue", color="#4B5563")
+                ax.bar([i + w / 2 for i in x], plot_df['Free Cash Flow'] / 1e9, w, label="Free Cash Flow", color="#F59E0B")
+                ax.set_ylabel("Billions (USD)")
+                ax.set_xticks(list(x))
+                ax.set_xticklabels(dates)
+                ax.legend()
 
-            # --- Multi-Ratio Health Trends ---
-            st.subheader("Operating Efficiency & Capital Ratios")
-            ratio_tab1, ratio_tab2, ratio_tab3 = st.tabs(["FCF Margin", "Net Margin", "ROIC"])
-            
-            with ratio_tab1:
-                fcf_margin = pd.DataFrame({
-                    'Date': dates,
-                    'FCF Margin (%)': (plot_df['Free Cash Flow'] / plot_df['Revenue']) * 100
-                }).set_index('Date')
-                st.line_chart(fcf_margin, color="#ff7f0e", height=190)
+                # --- Interactive Plotly Chart (For Web UI) ---
+                fig_plotly = go.Figure()
+                fig_plotly.add_trace(go.Bar(
+                    x=dates,
+                    y=plot_df['Revenue'] / 1e9,
+                    name='Revenue',
+                    marker_color='#4B5563'
+                ))
+                fig_plotly.add_trace(go.Bar(
+                    x=dates,
+                    y=plot_df['Free Cash Flow'] / 1e9,
+                    name='Free Cash Flow',
+                    marker_color='#F59E0B'
+                ))
 
-            with ratio_tab2:
-                net_margin = pd.DataFrame({
-                    'Date': dates,
-                    'Net Profit Margin (%)': (plot_df['Net Income'] / plot_df['Revenue']) * 100
-                }).set_index('Date')
-                st.line_chart(net_margin, color="#2ca02c", height=190)
+                fig_plotly.update_layout(
+                    barmode='group',
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#9CA3AF', family='Inter'),
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    yaxis_title="Billions (USD)"
+                )
+                st.plotly_chart(fig_plotly, use_container_width=True)
 
-            with ratio_tab3:
-                if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].isna().sum() == 0:
-                    tax_rate = macro.get("default_tax_rate", 0.21)
-                    nopat = plot_df['Operating Income'] * (1 - tax_rate)
-                    roic_series = (nopat / plot_df['Invested Capital']) * 100
-                    roic_df = pd.DataFrame({'Date': dates, 'ROIC (%)': roic_series}).set_index('Date')
-                    st.line_chart(roic_df, color="#1f77b4", height=190)
-                else:
-                    st.caption("Invested capital structure not applicable or missing for this ticker.")
+                # --- Multi-Ratio Health Trends ---
+                st.subheader("Operating Efficiency & Capital Ratios")
+                ratio_tab1, ratio_tab2, ratio_tab3 = st.tabs(["FCF Margin", "Net Margin", "ROIC"])
+
+                with ratio_tab1:
+                    fcf_margin = pd.DataFrame({
+                        'Date': dates,
+                        'FCF Margin (%)': (plot_df['Free Cash Flow'] / plot_df['Revenue']) * 100
+                    }).set_index('Date')
+                    st.line_chart(fcf_margin, color="#F59E0B", height=190)
+
+                with ratio_tab2:
+                    net_margin = pd.DataFrame({
+                        'Date': dates,
+                        'Net Profit Margin (%)': (plot_df['Net Income'] / plot_df['Revenue']) * 100
+                    }).set_index('Date')
+                    st.line_chart(net_margin, color="#10B981", height=190)
+
+                with ratio_tab3:
+                    if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].isna().sum() == 0:
+                        tax_rate = macro.get("default_tax_rate", 0.21)
+                        nopat = plot_df['Operating Income'] * (1 - tax_rate)
+                        roic_series = (nopat / plot_df['Invested Capital']) * 100
+                        roic_df = pd.DataFrame({'Date': dates, 'ROIC (%)': roic_series}).set_index('Date')
+                        st.line_chart(roic_df, color="#9CA3AF", height=190)
+                    else:
+                        st.caption("Invested capital structure not applicable or missing for this ticker.")
 
         with mid_col2:
-            if model_route == "DCF":
-                st.subheader("Valuation Multiverse (Sensitivity)")
-                matrix_df = build_sensitivity_matrix(
-                    clean_data, info, cost_of_capital, 
-                    base_g=perpetual_growth, 
-                    short_term_growth=short_term_growth
-                )
-                st.dataframe(matrix_df.style.highlight_max(axis=None, color='#2ca02c33'), use_container_width=True)
-            else:
-                st.subheader("Dividend Policy Analysis")
-                base_div = info.get('dividendRate') or info.get('trailingAnnualDividendRate', 0)
-                c_div1, c_div2 = st.columns(2)
-                c_div1.metric("Base Dividend (DPS)", f"${base_div:.2f}")
-                c_div2.metric("Payout Ratio", f"{info.get('payoutRatio', 0)*100:.1f}%")
-                
-                st.subheader("DDM Valuation Multiverse")
-                ddm_matrix = build_ddm_sensitivity_matrix(
-                    info, 
-                    cost_of_capital, 
-                    div_growth_rate=div_growth_rate, 
-                    base_terminal_g=perpetual_growth
-                )
-                if not ddm_matrix.empty:
+            with st.container(border=True):
+                if model_route == "DCF":
+                    st.subheader("Valuation Multiverse (Sensitivity)")
+                    st.caption("Intrinsic value per share across WACC and terminal growth scenarios")
+                    matrix_df = build_sensitivity_matrix(
+                        clean_data,
+                        info,
+                        cost_of_capital,
+                        base_g=perpetual_growth,
+                        short_term_growth=short_term_growth
+                    )
                     st.dataframe(
-                        ddm_matrix.style.highlight_max(axis=None, color='#2ca02c33').format("${:.2f}", na_rep="N/A"), 
+                        matrix_df.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
                         use_container_width=True
                     )
                 else:
-                    st.caption("Unable to compute sensitivity matrix: Missing or non-positive dividend baseline.")
+                    st.subheader("Dividend Policy Analysis")
+                    base_div = info.get('dividendRate') or info.get('trailingAnnualDividendRate', 0)
+                    payout = (info.get('payoutRatio') or 0) * 100
+                    c_div1, c_div2 = st.columns(2)
+                    c_div1.metric("Base Dividend (DPS)", f"${base_div:.2f}")
+                    c_div2.metric("Payout Ratio", f"{payout:.1f}%")
+
+                    st.subheader("DDM Valuation Multiverse")
+                    st.caption("Intrinsic value per share across Cost of Equity and dividend growth scenarios")
+                    ddm_matrix = build_ddm_sensitivity_matrix(
+                        info,
+                        cost_of_capital,
+                        div_growth_rate=div_growth_rate,
+                        base_terminal_g=perpetual_growth
+                    )
+                    if not ddm_matrix.empty:
+                        st.dataframe(
+                            ddm_matrix.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
+                            use_container_width=True
+                        )
+                    else:
+                        st.caption("Unable to compute sensitivity matrix: Missing or non-positive dividend baseline.")
 
         st.divider()
 
@@ -226,13 +345,14 @@ if run_btn:
         st.subheader("Institutional Deliverables")
         chart_file = f"{ticker_input}_financials.png"
         fig.savefig(chart_file, dpi=200, bbox_inches='tight')
+        plt.close(fig)
         generate_pdf_report(ticker_input, current_price, intrinsic_val, cost_of_capital, chart_file)
-        
+
         pdf_path = f"{ticker_input}_Valuation_Report.pdf"
         if os.path.exists(pdf_path):
             with open(pdf_path, "rb") as pdf_data:
                 st.download_button(
-                    label=f"📥 Download {ticker_input} Executive PDF Tear-Sheet",
+                    label=f"Download {ticker_input} Executive PDF Tear-Sheet",
                     data=pdf_data,
                     file_name=pdf_path,
                     mime="application/pdf"

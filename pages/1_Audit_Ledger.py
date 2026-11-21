@@ -1,7 +1,7 @@
 import sys
 sys.path.append("src")
 import streamlit as st
-from finenginepy.db import get_valuation_history, clear_valuation_history
+from finenginepy.db import get_valuation_history, clear_valuation_history, require_auth
 
 st.set_page_config(page_title="Audit Ledger | FinEngine", layout="wide")
 
@@ -15,8 +15,9 @@ st.markdown("""
     header {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
+require_auth()
 
-st.title("📑 Valuation Audit Ledger")
+st.title("Valuation Audit Ledger")
 st.caption("Persistent SQLite database of all historical intrinsic value calculations.")
 
 history_df = get_valuation_history()

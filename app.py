@@ -13,7 +13,7 @@ from finenginepy.ddm_model import run_ddm_valuation
 from finenginepy.guards import validate_company, ValuationError
 from finenginepy.pipeline import generate_pdf_report
 from finenginepy.sensitivity import build_sensitivity_matrix, build_ddm_sensitivity_matrix
-from finenginepy.db import init_db, log_valuation
+from finenginepy.db import init_db, log_valuation, require_auth
 
 # MUST BE THE FIRST STREAMLIT COMMAND
 st.set_page_config(page_title="FinEngine | Valuation Platform", layout="wide", initial_sidebar_state="expanded")
@@ -74,6 +74,7 @@ st.markdown("""
         Institutional-grade 3-Stage DCF and Dividend Discount Models with automated routing.
     </p>
 """, unsafe_allow_html=True)
+require_auth()
 
 # --- Sidebar: Controls ---
 st.sidebar.header("Model Controls")

@@ -1,7 +1,7 @@
 import pandas as pd
-from data_fetcher import fetch_raw_data, clean_financials
-from dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
-from guards import validate_company, ValuationError
+from finenginepy.data_fetcher import fetch_raw_data, clean_financials
+from finenginepy.dcf_model import load_macro_assumptions, calculate_wacc, run_dcf_valuation
+from finenginepy.guards import validate_company, ValuationError
 
 def run_screener(tickers):
     print(f"\n[+] Initializing Screener for {len(tickers)} assets...")

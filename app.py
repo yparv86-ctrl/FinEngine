@@ -14,7 +14,7 @@ from finenginepy.db import init_db, log_valuation, require_auth
 from finenginepy.dcf_model import calculate_wacc, load_macro_assumptions, run_dcf_valuation
 from finenginepy.ddm_model import run_ddm_valuation
 from finenginepy.guards import ValuationError, validate_company
-from finenginepy.pipeline import generate_pdf_report
+from finenginepy.pipeline import generate_excel_workbook, generate_pdf_report
 from finenginepy.sensitivity import build_ddm_sensitivity_matrix, build_sensitivity_matrix
 
 # MUST BE THE FIRST STREAMLIT COMMAND
@@ -46,7 +46,10 @@ def load_cached_comps(
     custom_peers_tuple: tuple[str, ...]
 ) -> tuple[pd.DataFrame, dict]:
     peer_list = list(custom_peers_tuple) if custom_peers_tuple else None
-    return run_peer_comps(ticker, info, peer_list)
+    res = run_peer_comps(ticker, info, peer_list)
+    if res is None:
+        raise ValueError("Could not compute peer comparables.")
+    return res
 
 
 # --- Phase 3: Private Wealth Gold Glassmorphism & Typography ---
@@ -326,12 +329,14 @@ if run_btn:
                     else:
                         st.caption("Invested capital structure not applicable or missing for this ticker.")
 
+        active_matrix = pd.DataFrame()
+
         with mid_col2:
             with st.container(border=True):
                 if model_route == "DCF":
                     st.subheader("Valuation Multiverse (Sensitivity)")
                     st.caption("Intrinsic value per share across WACC and terminal growth scenarios")
-                    matrix_df = build_sensitivity_matrix(
+                    active_matrix = build_sensitivity_matrix(
                         clean_data,
                         info,
                         cost_of_capital,
@@ -339,7 +344,7 @@ if run_btn:
                         short_term_growth=short_term_growth
                     )
                     st.dataframe(
-                        matrix_df.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
+                        active_matrix.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
                         use_container_width=True
                     )
                 else:
@@ -352,15 +357,15 @@ if run_btn:
 
                     st.subheader("DDM Valuation Multiverse")
                     st.caption("Intrinsic value per share across Cost of Equity and dividend growth scenarios")
-                    ddm_matrix = build_ddm_sensitivity_matrix(
+                    active_matrix = build_ddm_sensitivity_matrix(
                         info,
                         cost_of_capital,
                         div_growth_rate=div_growth_rate,
                         base_terminal_g=perpetual_growth
                     )
-                    if not ddm_matrix.empty:
+                    if not active_matrix.empty:
                         st.dataframe(
-                            ddm_matrix.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
+                            active_matrix.style.highlight_max(axis=None, color='#F59E0B33').format("${:.2f}", na_rep="N/A"),
                             use_container_width=True
                         )
                     else:
@@ -438,22 +443,44 @@ if run_btn:
 
         st.divider()
 
-        # --- Bottom Section: Export Tear-Sheet ---
+        # --- Bottom Section: Institutional Deliverables (PDF & Excel) ---
         st.subheader("Institutional Deliverables")
         chart_file = f"{ticker_input}_financials.png"
         fig.savefig(chart_file, dpi=200, bbox_inches='tight')
         plt.close(fig)
         generate_pdf_report(ticker_input, current_price, intrinsic_val, cost_of_capital, chart_file)
 
+        excel_bytes = generate_excel_workbook(
+            ticker=ticker_input,
+            model_route=model_route,
+            current_price=current_price,
+            intrinsic_val=intrinsic_val,
+            cost_of_capital=cost_of_capital,
+            sensitivity_df=active_matrix,
+            comps_df=comps_df,
+            clean_data=clean_data,
+        )
+
+        dl_col1, dl_col2 = st.columns(2)
         pdf_path = f"{ticker_input}_Valuation_Report.pdf"
-        if os.path.exists(pdf_path):
-            with open(pdf_path, "rb") as pdf_data:
-                st.download_button(
-                    label=f"Download {ticker_input} Executive PDF Tear-Sheet",
-                    data=pdf_data,
-                    file_name=pdf_path,
-                    mime="application/pdf"
-                )
+        with dl_col1:
+            if os.path.exists(pdf_path):
+                with open(pdf_path, "rb") as pdf_data:
+                    st.download_button(
+                        label=f"Download {ticker_input} Executive PDF Tear-Sheet",
+                        data=pdf_data,
+                        file_name=pdf_path,
+                        mime="application/pdf",
+                        use_container_width=True,
+                    )
+        with dl_col2:
+            st.download_button(
+                label=f"Download {ticker_input} 4-Tab Excel Model (.xlsx)",
+                data=excel_bytes,
+                file_name=f"{ticker_input}_FinEngine_Model.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
 
     except ValuationError as ve:
         st.error(str(ve))

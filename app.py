@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+from finenginepy.comps import run_peer_comps
 from finenginepy.data_fetcher import clean_financials, fetch_raw_data
 from finenginepy.db import init_db, log_valuation, require_auth
 from finenginepy.dcf_model import calculate_wacc, load_macro_assumptions, run_dcf_valuation
@@ -29,10 +30,23 @@ init_db()
 
 # --- Core Data Caching Pipeline ---
 @st.cache_data(ttl=3600)
-def load_and_cache_data(ticker):
-    inc, bal, cf, info = fetch_raw_data(ticker)
+def load_and_cache_data(ticker: str) -> tuple[dict, pd.DataFrame]:
+    fetched = fetch_raw_data(ticker)
+    if fetched is None:
+        raise ValueError(f"Could not fetch market data for {ticker}.")
+    inc, bal, cf, info = fetched
     clean_data = clean_financials(inc, bal, cf)
     return info, clean_data
+
+
+@st.cache_data(ttl=3600)
+def load_cached_comps(
+    ticker: str,
+    info: dict,
+    custom_peers_tuple: tuple[str, ...]
+) -> tuple[pd.DataFrame, dict]:
+    peer_list = list(custom_peers_tuple) if custom_peers_tuple else None
+    return run_peer_comps(ticker, info, peer_list)
 
 
 # --- Phase 3: Private Wealth Gold Glassmorphism & Typography ---
@@ -173,6 +187,13 @@ perpetual_growth = st.sidebar.slider("Stage 3: Terminal Growth", min_value=0.01,
 st.sidebar.subheader("DDM Levers (Banks)")
 div_growth_rate = st.sidebar.slider("Dividend Growth Rate", min_value=0.01, max_value=0.15, value=0.06, step=0.01)
 
+st.sidebar.subheader("Peer Comps Basket")
+custom_peers_input = st.sidebar.text_input(
+    "Custom Peers (comma-separated, optional)",
+    value="",
+    placeholder="e.g. MSFT, GOOG, NVDA, META"
+)
+
 run_btn = st.sidebar.button("Run Intrinsic Valuation", type="primary")
 
 if run_btn:
@@ -181,7 +202,7 @@ if run_btn:
             info, clean_data = load_and_cache_data(ticker_input)
             model_route = validate_company(info, clean_data)
             macro = load_macro_assumptions()
-            current_price = info.get('currentPrice', info.get('regularMarketPrice', 0.0))
+            current_price = float(info.get('currentPrice') or info.get('regularMarketPrice') or 0.0)
 
             # Render Live Company Identity Header & Champagne Amber Routing Pill
             company_name = info.get("longName", ticker_input)
@@ -190,16 +211,22 @@ if run_btn:
 
             if model_route == "DDM":
                 badge_text = "Financial Institution • Dividend Discount Engine (DDM)"
-                intrinsic_val, cost_of_capital = run_ddm_valuation(
+                ddm_result = run_ddm_valuation(
                     info,
                     macro,
                     forecast_years=5,
                     dividend_growth_rate=div_growth_rate,
                     terminal_growth_rate=perpetual_growth
                 )
+                if ddm_result is None:
+                    raise ValueError("DDM valuation did not return a valid result.")
+                intrinsic_val, cost_of_capital = ddm_result
             else:
                 badge_text = "Standard Corporate • 3-Stage DCF Engine"
-                cost_of_capital, mkt_cap, debt = calculate_wacc(info, macro)
+                wacc_result = calculate_wacc(info, macro)
+                if wacc_result is None:
+                    raise ValueError("WACC calculation did not return a valid result.")
+                cost_of_capital, mkt_cap, debt = wacc_result
                 intrinsic_val = run_dcf_valuation(clean_data, info, macro, cost_of_capital, mkt_cap, debt)
 
             st.markdown(f"""
@@ -291,7 +318,7 @@ if run_btn:
 
                 with ratio_tab3:
                     if 'Invested Capital' in plot_df.columns and plot_df['Invested Capital'].isna().sum() == 0:
-                        tax_rate = macro.get("default_tax_rate", 0.21)
+                        tax_rate = macro.get("default_tax_rate", 0.21) if isinstance(macro, dict) else 0.21
                         nopat = plot_df['Operating Income'] * (1 - tax_rate)
                         roic_series = (nopat / plot_df['Invested Capital']) * 100
                         roic_df = pd.DataFrame({'Date': dates, 'ROIC (%)': roic_series}).set_index('Date')
@@ -338,6 +365,76 @@ if run_btn:
                         )
                     else:
                         st.caption("Unable to compute sensitivity matrix: Missing or non-positive dividend baseline.")
+
+        st.divider()
+
+        # --- Peer Comparables (Relative Valuation) Engine ---
+        st.subheader("Peer Comparables & Relative Valuation")
+        custom_peers = tuple(
+            [p.strip().upper() for p in custom_peers_input.split(",") if p.strip()]
+        ) if custom_peers_input.strip() else ()
+
+        with st.spinner("Benchmarking trading multiples against sector peers..."):
+            comps_df, comps_summary = load_cached_comps(ticker_input, info, custom_peers)
+
+        comp_col1, comp_col2 = st.columns([1.25, 1])
+
+        with comp_col1:
+            with st.container(border=True):
+                st.caption("Trading Multiples Benchmark (Target vs. Sector Peers & Median)")
+                st.dataframe(
+                    comps_df.style.format({
+                        "Price": "${:.2f}",
+                        "Trailing P/E": "{:.1f}x",
+                        "Forward P/E": "{:.1f}x",
+                        "EV/EBITDA": "{:.1f}x",
+                        "P/FCF": "{:.1f}x",
+                    }, na_rep="N/A"),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                implied_rel = comps_summary["implied_relative_price"]
+                rel_spread = comps_summary["relative_spread_pct"]
+                m_c1, m_c2 = st.columns(2)
+                if not pd.isna(implied_rel):
+                    rel_verdict = "DISCOUNT TO PEERS" if rel_spread > 0 else "PREMIUM TO PEERS"
+                    m_c1.metric("Implied Relative Value", f"${implied_rel:.2f}")
+                    m_c2.metric("Relative Spread", f"{rel_spread:+.1f}%", delta=rel_verdict)
+                else:
+                    st.caption("Insufficient positive peer multiples to compute blended relative value.")
+
+        with comp_col2:
+            with st.container(border=True):
+                st.caption("Target vs. Peer Median Multiples")
+                mult_names = ["Trailing P/E", "Forward P/E", "EV/EBITDA", "P/FCF"]
+                target_vals = [comps_summary["target_multiples"].get(m, 0) or 0 for m in mult_names]
+                median_vals = [comps_summary["medians"].get(m, 0) or 0 for m in mult_names]
+
+                fig_comps = go.Figure()
+                fig_comps.add_trace(go.Bar(
+                    x=mult_names,
+                    y=target_vals,
+                    name=ticker_input,
+                    marker_color="#F59E0B"
+                ))
+                fig_comps.add_trace(go.Bar(
+                    x=mult_names,
+                    y=median_vals,
+                    name="Peer Median",
+                    marker_color="#4B5563"
+                ))
+                fig_comps.update_layout(
+                    barmode="group",
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#9CA3AF", family="Inter"),
+                    margin=dict(l=0, r=0, t=10, b=0),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    yaxis_title="Multiple (x)",
+                    height=310
+                )
+                st.plotly_chart(fig_comps, use_container_width=True)
 
         st.divider()
 
